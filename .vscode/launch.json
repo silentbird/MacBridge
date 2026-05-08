@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacBridge}/POC",
+            "name": "Debug MacBridgePOC (POC)",
+            "target": "MacBridgePOC",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MacBridgePOC (POC)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacBridge}/POC",
+            "name": "Release MacBridgePOC (POC)",
+            "target": "MacBridgePOC",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MacBridgePOC (POC)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacBridge}",
+            "name": "Debug MacBridge",
+            "target": "MacBridge",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MacBridge"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MacBridge}",
+            "name": "Release MacBridge",
+            "target": "MacBridge",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MacBridge"
+        }
+    ]
+}

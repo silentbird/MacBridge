@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -version)",
+      "Bash(swift --version)",
+      "Bash(swift build *)",
+      "Bash(./build.sh)",
+      "Bash(codesign -dv MacBridgePOC.app)",
+      "Bash(/usr/bin/hidutil property *)"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+Package.resolved
+MacBridge.app/
+POC/MacBridgePOC.app/
+POC/.build/
+POC/.swiftpm/
+*.dSYM/
+.DS_Store
+xcuserdata/
+.idea
