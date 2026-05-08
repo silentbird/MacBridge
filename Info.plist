@@ -24,5 +24,9 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>MacBridge needs Accessibility permission to remap keyboard shortcuts globally.</string>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>MacBridge needs Input Monitoring permission to observe keyboard shortcuts before remapping them.</string>
 </dict>
 </plist>

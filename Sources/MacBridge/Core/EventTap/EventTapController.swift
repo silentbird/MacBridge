@@ -7,7 +7,7 @@ import Foundation
 /// against every key event. The tap is started/stopped based on whether
 /// any feature that needs it is enabled.
 final class EventTapController: ObservableObject {
-    @Published private(set) var statusText: String = "Idle"
+    @Published private(set) var statusText: String = "Off"
     @Published var devABTestEnabled: Bool = false {
         didSet { reconcile() }
     }
@@ -34,10 +34,14 @@ final class EventTapController: ObservableObject {
         ]
 
         settings.$ctrlSemanticEnabled
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.reconcile() }
             .store(in: &cancellables)
 
         reconcile()
+        DispatchQueue.main.async { [weak self] in
+            self?.reconcile()
+        }
     }
 
     // MARK: - Lifecycle
@@ -61,16 +65,32 @@ final class EventTapController: ObservableObject {
         reconcile()
     }
 
+    /// Synchronize the running tap with the current settings. Useful when the
+    /// menu is opened after app launch or after TCC permission changes.
+    func refresh() {
+        reconcile()
+    }
+
     private func start() {
         guard tap == nil else { return }
+        statusText = "Starting"
 
         // Silent check — do NOT show the system prompt here. TCC may report
         // "not trusted" even after the user granted us in System Settings if
         // the binary was re-signed (ad-hoc rebuild changes the signature hash).
-        // Prompting here would spam a dialog every launch. User can explicitly
-        // request via the menu's "Request Accessibility permission" button.
+        // Prompting here would spam a dialog every launch. The launch-time
+        // `AccessibilityPermission.checkAndPromptIfNeeded()` + the menu's
+        // "Re-check permissions" button own the user-facing prompt flow.
         guard AccessibilityPermission.isTrusted() else {
-            statusText = "Need Accessibility — click 'Request' in menu"
+            statusText = "Need Accessibility — use 'Re-check permissions'"
+            return
+        }
+        guard AccessibilityPermission.canListenToInput() else {
+            statusText = "Need Input Monitoring — use 'Re-check permissions'"
+            return
+        }
+        guard AccessibilityPermission.canPostEvents() else {
+            statusText = "Need Event Posting — use 'Re-check permissions'"
             return
         }
 
@@ -94,7 +114,7 @@ final class EventTapController: ObservableObject {
             },
             userInfo: selfPtr
         ) else {
-            statusText = "Failed to create event tap"
+            statusText = "Failed to create event tap — check Input Monitoring"
             return
         }
 
@@ -116,7 +136,7 @@ final class EventTapController: ObservableObject {
         }
         tap = nil
         runLoopSource = nil
-        statusText = "Idle"
+        statusText = "Off"
     }
 
     // MARK: - Callback
@@ -133,14 +153,23 @@ final class EventTapController: ObservableObject {
             return Unmanaged.passUnretained(event)
         }
 
+        if event.getIntegerValueField(.eventSourceUserData) == KeyRemapSyntheticEvent.userData {
+            return Unmanaged.passUnretained(event)
+        }
+
         let context = KeyRemapContext(frontmostBundleID: frontmost.bundleID)
         let flagsBefore = event.flags.rawValue
         let keyBefore = event.getIntegerValueField(.keyboardEventKeycode)
+        var suppressed = false
         for rule in rules {
-            rule.apply(to: event, type: type, context: context)
+            if rule.apply(to: event, type: type, context: context) == .suppress {
+                suppressed = true
+                break
+            }
         }
         let changed = event.flags.rawValue != flagsBefore ||
-                      event.getIntegerValueField(.keyboardEventKeycode) != keyBefore
+                      event.getIntegerValueField(.keyboardEventKeycode) != keyBefore ||
+                      suppressed
 
         // Diagnostics — hop to main queue since @Published must publish there.
         DispatchQueue.main.async { [weak self] in
@@ -150,6 +179,9 @@ final class EventTapController: ObservableObject {
             self.lastFrontmost = context.frontmostBundleID ?? "-"
         }
 
+        if suppressed {
+            return nil
+        }
         return Unmanaged.passUnretained(event)
     }
 }

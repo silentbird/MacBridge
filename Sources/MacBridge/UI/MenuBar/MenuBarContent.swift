@@ -8,38 +8,61 @@ struct MenuBarContent: View {
     @ObservedObject var profileManager: ProfileManager
 
     var body: some View {
-        Text("MacBridge").font(.headline)
-        Divider()
+        Group {
+            Text("MacBridge").font(.headline)
+            Divider()
 
-        globalSection
+            globalSection
 
-        Divider()
-        keyboardsSection
+            Divider()
+            keyboardsSection
 
-        Divider()
-        devSection
+            Divider()
+            devSection
 
-        Divider()
-        Button("Request Accessibility permission") {
-            _ = AccessibilityPermission.request()
+            Divider()
+            Button("Re-check permissions") {
+                AccessibilityPermission.checkAndPromptIfNeeded()
+                eventTap.retryStart()
+            }
+            Button("Copy diagnostic log") {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(diagnosticReport(), forType: .string)
+            }
+
+            Divider()
+            Button("Quit MacBridge") {
+                profileManager.cleanupAll()
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q")
         }
-        Button("Retry event-tap activation") {
-            eventTap.retryStart()
+        .onAppear {
+            eventTap.refresh()
         }
-
-        Divider()
-        Button("Quit MacBridge") {
-            profileManager.cleanupAll()
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q")
     }
 
     @ViewBuilder
     private var globalSection: some View {
         Text("Global mapping").font(.caption).foregroundStyle(.secondary)
-        Toggle("Ctrl → Cmd for C/V/X/Z/A/F/S/O/N/P/T/W", isOn: $settings.ctrlSemanticEnabled)
+        Toggle(
+            "Ctrl → Cmd for C/V/X/Z/A/F/S/O/N/P/T/W",
+            isOn: Binding(
+                get: { settings.ctrlSemanticEnabled },
+                set: {
+                    settings.ctrlSemanticEnabled = $0
+                    eventTap.refresh()
+                }
+            )
+        )
         Text("Works for physical + remote (UU/VNC/Moonlight); terminals excluded")
+            .font(.system(size: 10))
+            .foregroundStyle(.tertiary)
+        Text("mapping: \(settings.ctrlSemanticEnabled ? "on" : "off")")
+            .font(.system(size: 10))
+            .foregroundStyle(.tertiary)
+        Text("permissions: ax \(permissionMark(AccessibilityPermission.isTrusted())) · input \(permissionMark(AccessibilityPermission.canListenToInput())) · post \(permissionMark(AccessibilityPermission.canPostEvents()))")
             .font(.system(size: 10))
             .foregroundStyle(.tertiary)
         Text("tap: \(eventTap.statusText) · seen: \(eventTap.eventsSeen) · remapped: \(eventTap.eventsRemapped)")
@@ -84,6 +107,61 @@ struct MenuBarContent: View {
             get: { profileManager.profile(for: device).swapModifiers },
             set: { profileManager.setSwapEnabled($0, for: device) }
         )
+    }
+
+    private func permissionMark(_ allowed: Bool) -> String {
+        allowed ? "yes" : "no"
+    }
+
+    private func diagnosticReport() -> String {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+        let bundle = Bundle.main.bundleIdentifier ?? "-"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+
+        var lines: [String] = []
+        lines.append("=== MacBridge diagnostic ===")
+        lines.append("time:     \(fmt.string(from: Date()))")
+        lines.append("bundle:   \(bundle) v\(version) (\(build))")
+        lines.append("os:       \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        lines.append("")
+        lines.append("--- settings ---")
+        lines.append("ctrlSemanticEnabled: \(settings.ctrlSemanticEnabled)")
+        lines.append("devABTestEnabled:    \(eventTap.devABTestEnabled)")
+        lines.append("")
+        lines.append("--- permissions (preflight) ---")
+        lines.append("accessibility:    \(permissionMark(AccessibilityPermission.isTrusted()))")
+        lines.append("input monitoring: \(permissionMark(AccessibilityPermission.canListenToInput()))")
+        lines.append("post events:      \(permissionMark(AccessibilityPermission.canPostEvents()))")
+        lines.append("")
+        lines.append("--- event tap ---")
+        lines.append("status:    \(eventTap.statusText)")
+        lines.append("seen:      \(eventTap.eventsSeen)")
+        lines.append("remapped:  \(eventTap.eventsRemapped)")
+        lines.append("frontmost: \(eventTap.lastFrontmost)")
+        lines.append("")
+        lines.append("--- keyboards (HID) ---")
+        lines.append(String(format: "open=0x%X init=%d cb+=%d cb-=%d permissionDenied=%@",
+                            detector.openResult,
+                            detector.initialEnumerationCount,
+                            detector.callbackConnects,
+                            detector.callbackRemoves,
+                            detector.permissionDenied ? "yes" : "no"))
+        if detector.devices.isEmpty {
+            lines.append("devices: (none detected)")
+        } else {
+            lines.append("devices:")
+            for device in detector.devices {
+                let profile = profileManager.profile(for: device)
+                lines.append("  - \(device.debugLabel) swap=\(profile.swapModifiers) applied=\(profileManager.isApplied(device))")
+            }
+        }
+        if let err = profileManager.lastError {
+            lines.append("")
+            lines.append("profileManager.lastError: \(err)")
+        }
+        return lines.joined(separator: "\n")
     }
 
     @ViewBuilder

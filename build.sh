@@ -29,8 +29,9 @@ mkdir -p "$APP_NAME/Contents/Resources"
 cp "$EXECUTABLE" "$APP_NAME/Contents/MacOS/$BINARY_NAME"
 cp Info.plist "$APP_NAME/Contents/Info.plist"
 
-echo "→ Ad-hoc signing..."
-codesign --force --deep --sign - "$APP_NAME"
+SIGN_IDENTITY="${MACBRIDGE_SIGN_IDENTITY:-MacBridge Dev}"
+echo "→ Signing with identity: $SIGN_IDENTITY"
+codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_NAME"
 
 echo "→ Killing any running MacBridge instance so next launch uses the fresh binary..."
 pkill -x MacBridge 2>/dev/null || true

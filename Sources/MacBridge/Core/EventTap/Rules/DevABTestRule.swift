@@ -11,12 +11,13 @@ final class DevABTestRule: KeyRemapRule {
         self.isEnabled = isEnabled
     }
 
-    func apply(to event: CGEvent, type: CGEventType, context: KeyRemapContext) {
-        guard isEnabled() else { return }
-        guard type == .keyDown || type == .keyUp else { return }
+    func apply(to event: CGEvent, type: CGEventType, context: KeyRemapContext) -> KeyRemapResult {
+        guard isEnabled() else { return .pass }
+        guard type == .keyDown || type == .keyUp else { return .pass }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         if keyCode == 0 {  // A
             event.setIntegerValueField(.keyboardEventKeycode, value: 11)  // B
         }
+        return .pass
     }
 }

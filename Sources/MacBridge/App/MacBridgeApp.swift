@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 @main
 struct MacBridgeApp: App {
+    @NSApplicationDelegateAdaptor(MacBridgeAppDelegate.self) private var appDelegate
     @StateObject private var settings: AppSettings
     @StateObject private var eventTap: EventTapController
     @StateObject private var detector: KeyboardDetector
@@ -37,5 +39,11 @@ struct MacBridgeApp: App {
             return "keyboard.fill"
         }
         return "keyboard"
+    }
+}
+
+final class MacBridgeAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AccessibilityPermission.checkAndPromptIfNeeded()
     }
 }

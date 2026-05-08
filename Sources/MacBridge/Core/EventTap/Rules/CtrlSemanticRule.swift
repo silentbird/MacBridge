@@ -12,6 +12,8 @@ import Foundation
 final class CtrlSemanticRule: KeyRemapRule {
     private let settings: AppSettings
     private let frontmost: FrontmostAppTracker
+    private let postEvent: (CGEvent) -> Void
+    private var remappedKeyDowns = Set<Int64>()
 
     /// US-layout virtual keycodes (from `HIToolbox/Events.h`) for keys we remap
     /// when Ctrl is held. Choice follows PRD §4.1 F8:
@@ -47,32 +49,60 @@ final class CtrlSemanticRule: KeyRemapRule {
         "org.tabby",
     ]
 
-    init(settings: AppSettings, frontmost: FrontmostAppTracker) {
+    init(
+        settings: AppSettings,
+        frontmost: FrontmostAppTracker,
+        postEvent: @escaping (CGEvent) -> Void = { event in
+            event.post(tap: .cgSessionEventTap)
+        }
+    ) {
         self.settings = settings
         self.frontmost = frontmost
+        self.postEvent = postEvent
     }
 
-    func apply(to event: CGEvent, type: CGEventType, context: KeyRemapContext) {
-        guard settings.ctrlSemanticEnabled else { return }
-        guard type == .keyDown || type == .keyUp else { return }
+    func apply(to event: CGEvent, type: CGEventType, context: KeyRemapContext) -> KeyRemapResult {
+        guard type == .keyDown || type == .keyUp else { return .pass }
+
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        if type == .keyUp, remappedKeyDowns.remove(keyCode) != nil {
+            return postCommandEvent(from: event)
+        }
+
+        guard type == .keyDown else { return .pass }
+        guard settings.ctrlSemanticEnabled else { return .pass }
 
         let flags = event.flags
         // Only handle "Ctrl held, not Cmd" — if Cmd is already held the user
         // already has the Mac shortcut, don't double-process.
-        guard flags.contains(.maskControl), !flags.contains(.maskCommand) else { return }
+        guard flags.contains(.maskControl), !flags.contains(.maskCommand) else { return .pass }
 
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        guard whitelistKeyCodes.contains(keyCode) else { return }
+        guard whitelistKeyCodes.contains(keyCode) else { return .pass }
 
         // Terminal blacklist — preserve native Ctrl+C behavior.
         if let bundleID = context.frontmostBundleID,
            terminalBundleIDs.contains(bundleID) {
-            return
+            return .pass
         }
 
-        var newFlags = flags
+        remappedKeyDowns.insert(keyCode)
+        return postCommandEvent(from: event)
+    }
+
+    private func postCommandEvent(from event: CGEvent) -> KeyRemapResult {
+        var newFlags = event.flags
         newFlags.remove(.maskControl)
         newFlags.insert(.maskCommand)
         event.flags = newFlags
+
+        guard let synthetic = event.copy() else {
+            return .pass
+        }
+        synthetic.setIntegerValueField(
+            .eventSourceUserData,
+            value: KeyRemapSyntheticEvent.userData
+        )
+        postEvent(synthetic)
+        return .suppress
     }
 }

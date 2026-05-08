@@ -6,7 +6,11 @@
       "Bash(swift build *)",
       "Bash(./build.sh)",
       "Bash(codesign -dv MacBridgePOC.app)",
-      "Bash(/usr/bin/hidutil property *)"
+      "Bash(/usr/bin/hidutil property *)",
+      "Bash(mdfind -name \"MacBridge.app\")",
+      "Read(//Applications/**)",
+      "Bash(codesign -dvv MacBridge.app)",
+      "Bash(./build.sh release *)"
     ]
   }
 }
