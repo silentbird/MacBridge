@@ -6,6 +6,9 @@ struct MenuBarContent: View {
     @ObservedObject var eventTap: EventTapController
     @ObservedObject var detector: KeyboardDetector
     @ObservedObject var profileManager: ProfileManager
+    @ObservedObject var ruleStore: RuleStore
+
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
@@ -15,10 +18,10 @@ struct MenuBarContent: View {
             globalSection
 
             Divider()
-            keyboardsSection
+            rulesSection
 
             Divider()
-            devSection
+            keyboardsSection
 
             Divider()
             Button("Re-check permissions") {
@@ -44,33 +47,46 @@ struct MenuBarContent: View {
     }
 
     @ViewBuilder
+    private var rulesSection: some View {
+        Menu("Shortcut rules (\(enabledRuleCount)/\(ruleStore.book.rules.count))") {
+            ForEach(ruleStore.book.rules) { rule in
+                Toggle(rule.name, isOn: enabledBinding(for: rule))
+            }
+            Divider()
+            Button("Open settings…") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: MacBridgeApp.settingsWindowID)
+            }
+            Button("Reset to defaults") {
+                ruleStore.resetToDefaults()
+            }
+        }
+    }
+
+    private func enabledBinding(for rule: RemapRule) -> Binding<Bool> {
+        Binding(
+            get: { ruleStore.book.rules.first(where: { $0.id == rule.id })?.enabled ?? false },
+            set: { newValue in
+                var book = ruleStore.book
+                guard let idx = book.rules.firstIndex(where: { $0.id == rule.id }) else { return }
+                book.rules[idx].enabled = newValue
+                ruleStore.save(book)
+            }
+        )
+    }
+
+    @ViewBuilder
     private var globalSection: some View {
-        Text("Global mapping").font(.caption).foregroundStyle(.secondary)
         Toggle(
-            "Ctrl → Cmd for C/V/X/Z/A/F/S/O/N/P/T/W",
+            "Enable remap engine",
             isOn: Binding(
-                get: { settings.ctrlSemanticEnabled },
+                get: { settings.remapEngineEnabled },
                 set: {
-                    settings.ctrlSemanticEnabled = $0
+                    settings.remapEngineEnabled = $0
                     eventTap.refresh()
                 }
             )
         )
-        Text("Works for physical + remote (UU/VNC/Moonlight); terminals excluded")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-        Text("mapping: \(settings.ctrlSemanticEnabled ? "on" : "off")")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-        Text("permissions: ax \(permissionMark(AccessibilityPermission.isTrusted())) · input \(permissionMark(AccessibilityPermission.canListenToInput())) · post \(permissionMark(AccessibilityPermission.canPostEvents()))")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-        Text("tap: \(eventTap.statusText) · seen: \(eventTap.eventsSeen) · remapped: \(eventTap.eventsRemapped)")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-        Text("frontmost: \(eventTap.lastFrontmost)")
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
     }
 
     @ViewBuilder
@@ -78,25 +94,13 @@ struct MenuBarContent: View {
         if detector.devices.isEmpty {
             Text("No physical keyboards detected").font(.caption).foregroundStyle(.secondary)
         } else {
-            Text("Physical keyboards (hidutil modifier swap)").font(.caption).foregroundStyle(.secondary)
+            Text("Physical keyboards").font(.caption).foregroundStyle(.secondary)
             ForEach(detector.devices) { device in
                 Toggle(isOn: swapBinding(for: device)) {
                     Text("Swap Alt↔Cmd  ·  \(device.productName)")
                 }
             }
         }
-
-        if detector.permissionDenied {
-            Text("ℹ️ Hot-plug may require Input Monitoring permission")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-        }
-        Text(String(format: "HID open: 0x%X · init: %d · cb+: %d · cb-: %d",
-                    detector.openResult,
-                    detector.initialEnumerationCount,
-                    detector.callbackConnects,
-                    detector.callbackRemoves))
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
         if let err = profileManager.lastError {
             Text("⚠️ \(err)").font(.system(size: 10)).foregroundStyle(.red)
         }
@@ -113,6 +117,10 @@ struct MenuBarContent: View {
         allowed ? "yes" : "no"
     }
 
+    private var enabledRuleCount: Int {
+        ruleStore.book.rules.lazy.filter(\.enabled).count
+    }
+
     private func diagnosticReport() -> String {
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withInternetDateTime]
@@ -127,8 +135,9 @@ struct MenuBarContent: View {
         lines.append("os:       \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("")
         lines.append("--- settings ---")
-        lines.append("ctrlSemanticEnabled: \(settings.ctrlSemanticEnabled)")
-        lines.append("devABTestEnabled:    \(eventTap.devABTestEnabled)")
+        lines.append("remapEngineEnabled: \(settings.remapEngineEnabled)")
+        lines.append("devABTestEnabled:   \(eventTap.devABTestEnabled)")
+        lines.append("rules:              \(enabledRuleCount)/\(ruleStore.book.rules.count) enabled (schema v\(ruleStore.book.version))")
         lines.append("")
         lines.append("--- permissions (preflight) ---")
         lines.append("accessibility:    \(permissionMark(AccessibilityPermission.isTrusted()))")
@@ -164,9 +173,4 @@ struct MenuBarContent: View {
         return lines.joined(separator: "\n")
     }
 
-    @ViewBuilder
-    private var devSection: some View {
-        Text("Dev sanity checks").font(.caption).foregroundStyle(.secondary)
-        Toggle("A → B event-tap test", isOn: $eventTap.devABTestEnabled)
-    }
 }

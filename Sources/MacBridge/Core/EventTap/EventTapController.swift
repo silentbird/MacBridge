@@ -12,6 +12,12 @@ final class EventTapController: ObservableObject {
         didSet { reconcile() }
     }
 
+    /// When true, the whole rule pipeline is skipped and events pass
+    /// through untouched. Used by the settings window's press-to-capture
+    /// UI so its NSEvent monitor sees raw keystrokes rather than the ones
+    /// the engine would rewrite.
+    @Published var isBypassed: Bool = false
+
     // Diagnostics — surface in the menu so we can see where the pipeline stalls.
     @Published private(set) var eventsSeen: Int = 0
     @Published private(set) var eventsRemapped: Int = 0
@@ -25,15 +31,32 @@ final class EventTapController: ObservableObject {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    init(settings: AppSettings) {
+    /// Which tap location actually succeeded at create time. HID sits below
+    /// WindowServer (so system shortcuts like Cmd+Tab are visible), but
+    /// usually requires root and silently fails for ad-hoc app bundles.
+    /// Session is the reliable fallback. Rules post synthetic events at
+    /// the same layer they came from.
+    private(set) var tapLocation: CGEventTapLocation = .cgSessionEventTap
+
+    init(settings: AppSettings, ruleStore: RuleStoring) {
         self.settings = settings
 
         rules = [
-            CtrlSemanticRule(settings: settings, frontmost: frontmost),
+            RemapEngine(
+                settings: settings,
+                frontmost: frontmost,
+                store: ruleStore,
+                // Post at the layer the tap actually runs at. If we tap at
+                // HID, synthetic events re-enter HID (userData marker skips
+                // our own tap). If we fell back to session, post at session.
+                postEvent: { [weak self] event in
+                    event.post(tap: self?.tapLocation ?? .cgSessionEventTap)
+                }
+            ),
             DevABTestRule(isEnabled: { [weak self] in self?.devABTestEnabled ?? false }),
         ]
 
-        settings.$ctrlSemanticEnabled
+        settings.$remapEngineEnabled
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.reconcile() }
             .store(in: &cancellables)
@@ -50,7 +73,7 @@ final class EventTapController: ObservableObject {
     // MARK: - Lifecycle
 
     private var anyRuleWantsTap: Bool {
-        settings.ctrlSemanticEnabled || devABTestEnabled
+        settings.remapEngineEnabled || devABTestEnabled
     }
 
     private func reconcile() {
@@ -103,23 +126,39 @@ final class EventTapController: ObservableObject {
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
-        guard let newTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: { proxy, type, event, refcon in
-                guard let refcon else { return Unmanaged.passUnretained(event) }
-                let controller = Unmanaged<EventTapController>
-                    .fromOpaque(refcon)
-                    .takeUnretainedValue()
-                return controller.handle(proxy: proxy, type: type, event: event)
-            },
-            userInfo: selfPtr
-        ) else {
+        // Prefer HID (sees system shortcuts: Cmd+Tab, Cmd+Space, ...). HID
+        // usually needs root and silently returns nil for ad-hoc user apps,
+        // so fall back to session — the reliable layer that covers
+        // everything WindowServer hasn't already consumed.
+        let preferred: [CGEventTapLocation] = [.cghidEventTap, .cgSessionEventTap]
+        var createdTap: CFMachPort?
+        var createdLocation: CGEventTapLocation = .cgSessionEventTap
+        let callback: CGEventTapCallBack = { proxy, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let controller = Unmanaged<EventTapController>
+                .fromOpaque(refcon)
+                .takeUnretainedValue()
+            return controller.handle(proxy: proxy, type: type, event: event)
+        }
+        for location in preferred {
+            if let t = CGEvent.tapCreate(
+                tap: location,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: mask,
+                callback: callback,
+                userInfo: selfPtr
+            ) {
+                createdTap = t
+                createdLocation = location
+                break
+            }
+        }
+        guard let newTap = createdTap else {
             statusText = "Failed to create event tap — check Input Monitoring"
             return
         }
+        self.tapLocation = createdLocation
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, newTap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
@@ -127,7 +166,7 @@ final class EventTapController: ObservableObject {
 
         self.tap = newTap
         self.runLoopSource = source
-        statusText = "Active"
+        statusText = "Active (\(createdLocation == .cghidEventTap ? "HID" : "session"))"
     }
 
     private func stop() {
@@ -153,6 +192,10 @@ final class EventTapController: ObservableObject {
             if let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            return Unmanaged.passUnretained(event)
+        }
+
+        if isBypassed {
             return Unmanaged.passUnretained(event)
         }
 

@@ -11,7 +11,8 @@
       "Read(//Applications/**)",
       "Bash(codesign -dvv MacBridge.app)",
       "Bash(./build.sh release *)",
-      "Bash(swift test *)"
+      "Bash(swift test *)",
+      "Bash(log show *)"
     ]
   }
 }

@@ -2,24 +2,30 @@ import XCTest
 import CoreGraphics
 @testable import MacBridge
 
-final class CtrlSemanticRuleTests: XCTestCase {
+/// Verifies that the data-driven `RemapEngine`, seeded with `SeedRules.defaultBook`,
+/// reproduces the behavior the old hardcoded `CtrlSemanticRule` was verified against.
+/// Every test here mirrors a corresponding case from the pre-refactor test file.
+final class RemapEngineTests: XCTestCase {
     private var settings: AppSettings!
     private var frontmost: FrontmostAppTracker!
-    private var rule: CtrlSemanticRule!
+    private var store: RuleStore!
+    private var engine: RemapEngine!
     private var postedEvents: [CGEvent]!
 
     override func setUp() {
         super.setUp()
-        let suite = "CtrlSemanticRuleTests-\(UUID().uuidString)"
+        let suite = "RemapEngineTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         settings = AppSettings(defaults: defaults)
-        settings.ctrlSemanticEnabled = true
+        settings.remapEngineEnabled = true
         frontmost = FrontmostAppTracker()
+        store = RuleStore(defaults: defaults)
         postedEvents = []
-        rule = CtrlSemanticRule(
+        engine = RemapEngine(
             settings: settings,
             frontmost: frontmost,
+            store: store,
             postEvent: { [weak self] event in
                 self?.postedEvents.append(event)
             }
@@ -48,7 +54,7 @@ final class CtrlSemanticRuleTests: XCTestCase {
     func testCtrlCInNormalAppBecomesCmdC() {
         let e = makeEvent(keyCode: 8, flags: .maskControl)  // C key
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .suppress)
         XCTAssertFalse(e.flags.contains(.maskControl))
@@ -65,11 +71,11 @@ final class CtrlSemanticRuleTests: XCTestCase {
     func testKeyUpForRemappedShortcutStaysCmdEvenIfControlReleasedFirst() {
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
         let down = makeEvent(keyCode: 8, flags: .maskControl)
-        XCTAssertEqual(rule.apply(to: down, type: .keyDown, context: ctx), .suppress)
+        XCTAssertEqual(engine.apply(to: down, type: .keyDown, context: ctx), .suppress)
 
         postedEvents.removeAll()
         let up = makeEvent(keyCode: 8, flags: [], keyDown: false)
-        let result = rule.apply(to: up, type: .keyUp, context: ctx)
+        let result = engine.apply(to: up, type: .keyUp, context: ctx)
 
         XCTAssertEqual(result, .suppress)
         XCTAssertFalse(up.flags.contains(.maskControl))
@@ -78,12 +84,12 @@ final class CtrlSemanticRuleTests: XCTestCase {
         XCTAssertTrue(postedEvents[0].flags.contains(.maskCommand))
     }
 
-    // MARK: Preserves Shift in Ctrl+Shift+T → Cmd+Shift+T
+    // MARK: Preserves Shift — Ctrl+Shift+T → Cmd+Shift+T
 
     func testCtrlShiftTPreservesShift() {
         let e = makeEvent(keyCode: 17, flags: [.maskControl, .maskShift])  // T
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .suppress)
         XCTAssertFalse(e.flags.contains(.maskControl))
@@ -92,12 +98,12 @@ final class CtrlSemanticRuleTests: XCTestCase {
         XCTAssertEqual(postedEvents.count, 1)
     }
 
-    // MARK: Terminal blacklist — no remap in Terminal.app
+    // MARK: Terminal exclude list
 
     func testCtrlCInTerminalIsNotRemapped() {
         let e = makeEvent(keyCode: 8, flags: .maskControl)
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Terminal")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -108,7 +114,7 @@ final class CtrlSemanticRuleTests: XCTestCase {
     func testCtrlCInITermIsNotRemapped() {
         let e = makeEvent(keyCode: 8, flags: .maskControl)
         let ctx = KeyRemapContext(frontmostBundleID: "com.googlecode.iterm2")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -116,12 +122,12 @@ final class CtrlSemanticRuleTests: XCTestCase {
         XCTAssertTrue(postedEvents.isEmpty)
     }
 
-    // MARK: Non-whitelisted keys — pass through
+    // MARK: Non-whitelisted keys pass through
 
     func testCtrlHIsNotRemapped() {
         let e = makeEvent(keyCode: 4, flags: .maskControl)  // H key
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -132,7 +138,7 @@ final class CtrlSemanticRuleTests: XCTestCase {
     func testCtrlSpaceIsNotRemapped() {
         let e = makeEvent(keyCode: 49, flags: .maskControl)  // Space
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -140,13 +146,13 @@ final class CtrlSemanticRuleTests: XCTestCase {
         XCTAssertTrue(postedEvents.isEmpty)
     }
 
-    // MARK: Feature disabled
+    // MARK: Master kill switch
 
     func testDisabledSettingLeavesEventAlone() {
-        settings.ctrlSemanticEnabled = false
+        settings.remapEngineEnabled = false
         let e = makeEvent(keyCode: 8, flags: .maskControl)
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -154,26 +160,25 @@ final class CtrlSemanticRuleTests: XCTestCase {
         XCTAssertTrue(postedEvents.isEmpty)
     }
 
-    // MARK: Cmd already held — don't double-process
+    // MARK: Cmd already held — forbiddenModifiers keeps us out
 
     func testCtrlCmdComboIsNotRemapped() {
         let e = makeEvent(keyCode: 8, flags: [.maskControl, .maskCommand])
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyDown, context: ctx)
+        let result = engine.apply(to: e, type: .keyDown, context: ctx)
 
-        // Should be left as-is (both flags still present)
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
         XCTAssertTrue(e.flags.contains(.maskCommand))
         XCTAssertTrue(postedEvents.isEmpty)
     }
 
-    // MARK: Not a key event
+    // MARK: Event type filter
 
     func testNonKeyEventTypeIgnored() {
         let e = makeEvent(keyCode: 8, flags: .maskControl)
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .flagsChanged, context: ctx)
+        let result = engine.apply(to: e, type: .flagsChanged, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
@@ -184,11 +189,31 @@ final class CtrlSemanticRuleTests: XCTestCase {
     func testKeyUpWithoutRemappedKeyDownPassesThrough() {
         let e = makeEvent(keyCode: 8, flags: .maskControl, keyDown: false)
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
-        let result = rule.apply(to: e, type: .keyUp, context: ctx)
+        let result = engine.apply(to: e, type: .keyUp, context: ctx)
 
         XCTAssertEqual(result, .pass)
         XCTAssertTrue(e.flags.contains(.maskControl))
         XCTAssertFalse(e.flags.contains(.maskCommand))
         XCTAssertTrue(postedEvents.isEmpty)
+    }
+
+    // MARK: Disabling a single rule still leaves others intact
+
+    func testDisablingOneRuleOnlySkipsThatTrigger() {
+        // Disable "Copy" (Ctrl+C) — Paste (Ctrl+V) must still remap.
+        var book = store.book
+        if let idx = book.rules.firstIndex(where: { $0.trigger.keyCode == SeedRules.keyC
+            && $0.trigger.requiredModifiers == [.ctrl] }) {
+            book.rules[idx].enabled = false
+        }
+        store.save(book)
+
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+        let ctrlC = makeEvent(keyCode: 8, flags: .maskControl)
+        XCTAssertEqual(engine.apply(to: ctrlC, type: .keyDown, context: ctx), .pass)
+
+        let ctrlV = makeEvent(keyCode: 9, flags: .maskControl)
+        XCTAssertEqual(engine.apply(to: ctrlV, type: .keyDown, context: ctx), .suppress)
+        XCTAssertTrue(ctrlV.flags.contains(.maskCommand))
     }
 }
