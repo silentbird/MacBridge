@@ -3,26 +3,30 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var ruleStore: RuleStore
+    @ObservedObject var ruleStore: SchemeStore
     @ObservedObject var eventTap: EventTapController
 
     @State private var selection: RemapRule.ID?
 
     var body: some View {
-        NavigationSplitView {
-            ruleList
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
-        } detail: {
-            if let selection {
-                RuleEditor(ruleID: selection, ruleStore: ruleStore, eventTap: eventTap)
-                    .id(selection)  // force-refresh editor when selection changes
-            } else {
-                Text("Select a rule to edit, or add a new one")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            SchemeToolbar(ruleStore: ruleStore)
+            Divider()
+            NavigationSplitView {
+                ruleList
+                    .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+            } detail: {
+                if let selection {
+                    RuleEditor(ruleID: selection, ruleStore: ruleStore, eventTap: eventTap)
+                        .id(selection)  // force-refresh editor when selection changes
+                } else {
+                    Text("Select a rule to edit, or add a new one")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
-        .frame(minWidth: 780, minHeight: 460)
+        .frame(minWidth: 820, minHeight: 500)
         .onAppear {
             // LSUIElement=YES means the app is normally .accessory (no Dock icon).
             // While the settings window is visible we flip to .regular so it
@@ -33,6 +37,12 @@ struct SettingsView: View {
         }
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
+        }
+        .onChange(of: ruleStore.library.activeSchemeID) { _ in
+            // Switching scheme means the current selection might be a rule
+            // from a different scheme; reset so the user lands on something
+            // from the new active book.
+            selection = ruleStore.book.rules.first?.id
         }
     }
 

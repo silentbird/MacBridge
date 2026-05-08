@@ -6,7 +6,8 @@ struct MenuBarContent: View {
     @ObservedObject var eventTap: EventTapController
     @ObservedObject var detector: KeyboardDetector
     @ObservedObject var profileManager: ProfileManager
-    @ObservedObject var ruleStore: RuleStore
+    @ObservedObject var ruleStore: SchemeStore
+    @ObservedObject var launchAtLogin: LaunchAtLoginService
 
     @Environment(\.openWindow) private var openWindow
 
@@ -16,6 +17,9 @@ struct MenuBarContent: View {
             Divider()
 
             globalSection
+
+            Divider()
+            schemesSection
 
             Divider()
             rulesSection
@@ -43,7 +47,35 @@ struct MenuBarContent: View {
         }
         .onAppear {
             eventTap.refresh()
+            launchAtLogin.refresh()
         }
+    }
+
+    @ViewBuilder
+    private var schemesSection: some View {
+        Menu("Scheme: \(activeSchemeName)") {
+            ForEach(ruleStore.library.schemes) { scheme in
+                Button {
+                    ruleStore.selectScheme(id: scheme.id)
+                } label: {
+                    // SwiftUI menu Buttons can't prefix an icon view cleanly,
+                    // so we embed the check mark directly in the label.
+                    Text(scheme.id == ruleStore.library.activeSchemeID
+                         ? "✓ \(scheme.name)"
+                         : "   \(scheme.name)")
+                }
+            }
+            Divider()
+            Button("Manage schemes…") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: MacBridgeApp.settingsWindowID)
+            }
+        }
+    }
+
+    private var activeSchemeName: String {
+        ruleStore.library.schemes.first(where: { $0.id == ruleStore.library.activeSchemeID })?.name
+            ?? "—"
     }
 
     @ViewBuilder
@@ -87,6 +119,18 @@ struct MenuBarContent: View {
                 }
             )
         )
+        Toggle(
+            "Launch at login",
+            isOn: Binding(
+                get: { launchAtLogin.isEnabled },
+                set: { launchAtLogin.setEnabled($0) }
+            )
+        )
+        if let err = launchAtLogin.lastError {
+            Text("⚠️ \(err)")
+                .font(.system(size: 10))
+                .foregroundStyle(.red)
+        }
     }
 
     @ViewBuilder

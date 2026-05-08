@@ -75,7 +75,7 @@ struct RemapRule: Codable, Identifiable, Equatable, Hashable {
 
 struct RuleBook: Codable, Equatable {
     var rules: [RemapRule]
-    /// Schema version. Bump whenever Codable shape changes so RuleStore.load
+    /// Schema version. Bump whenever Codable shape changes so SchemeStore
     /// can migrate (or discard to seed) gracefully.
     var version: Int
 
@@ -85,4 +85,37 @@ struct RuleBook: Codable, Equatable {
     /// real shortcut yet. Never matches any real event (real virtual keycodes
     /// max out around 0x7F).
     static let unsetKeyCode: CGKeyCode = 0xFFFF
+}
+
+/// A named bundle of rules. Users can have several (Windows migration,
+/// Gaming, Office-meeting) and switch between them. The active scheme's
+/// `book` is what the engine sees.
+struct Scheme: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var modifiedAt: Date
+    var book: RuleBook
+    /// `true` for the default "Windows Migration" scheme — can be edited
+    /// but not deleted, and `Reset to defaults` will restore it.
+    var isBuiltIn: Bool
+}
+
+/// Top-level state saved to disk. One file contains every scheme the user
+/// has plus which one is currently active.
+struct SchemeLibrary: Codable, Equatable {
+    var schemes: [Scheme]
+    var activeSchemeID: UUID
+    /// Independent of `RuleBook.version` — bump when this outer structure
+    /// changes shape (e.g. adding per-scheme settings).
+    var libraryVersion: Int
+
+    static let currentLibraryVersion = 1
+
+    /// Returns the active scheme's book, or a safe fallback if the active
+    /// id doesn't exist (shouldn't happen in normal flow, but we never
+    /// want to crash the event-tap pipeline on a malformed library).
+    var activeBook: RuleBook {
+        schemes.first(where: { $0.id == activeSchemeID })?.book ?? SeedRules.defaultBook
+    }
 }

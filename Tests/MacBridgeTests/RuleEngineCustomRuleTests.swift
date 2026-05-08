@@ -7,7 +7,7 @@ import CoreGraphics
 final class RuleEngineCustomRuleTests: XCTestCase {
     private var settings: AppSettings!
     private var frontmost: FrontmostAppTracker!
-    private var store: RuleStore!
+    private var store: SchemeStore!
     private var engine: RemapEngine!
     private var postedEvents: [CGEvent]!
 
@@ -19,7 +19,7 @@ final class RuleEngineCustomRuleTests: XCTestCase {
         settings = AppSettings(defaults: defaults)
         settings.remapEngineEnabled = true
         frontmost = FrontmostAppTracker()
-        store = RuleStore(defaults: defaults)
+        store = SchemeStore(persistence: InMemorySchemePersistence(), legacyDefaults: defaults)
         postedEvents = []
     }
 

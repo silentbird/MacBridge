@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// Right-pane editor for a single rule. Takes a rule id + store so edits
-/// flow through RuleStore.save() (which fans out to RemapEngine via the
+/// flow through SchemeStore.save() (which fans out to RemapEngine via the
 /// bookPublisher).
 struct RuleEditor: View {
     let ruleID: RemapRule.ID
-    @ObservedObject var ruleStore: RuleStore
+    @ObservedObject var ruleStore: SchemeStore
     @ObservedObject var eventTap: EventTapController
 
     var body: some View {

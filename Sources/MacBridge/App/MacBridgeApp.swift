@@ -8,19 +8,22 @@ struct MacBridgeApp: App {
     @StateObject private var eventTap: EventTapController
     @StateObject private var detector: KeyboardDetector
     @StateObject private var profileManager: ProfileManager
-    @StateObject private var ruleStore: RuleStore
+    @StateObject private var ruleStore: SchemeStore
+    @StateObject private var launchAtLogin: LaunchAtLoginService
 
     init() {
         let settings = AppSettings()
         let detector = KeyboardDetector()
-        let ruleStore = RuleStore()
+        let ruleStore = SchemeStore(persistence: FileSchemePersistence())
         let tap = EventTapController(settings: settings, ruleStore: ruleStore)
         let manager = ProfileManager(store: ProfileStore(), detector: detector)
+        let launch = LaunchAtLoginService()
         _settings = StateObject(wrappedValue: settings)
         _detector = StateObject(wrappedValue: detector)
         _eventTap = StateObject(wrappedValue: tap)
         _profileManager = StateObject(wrappedValue: manager)
         _ruleStore = StateObject(wrappedValue: ruleStore)
+        _launchAtLogin = StateObject(wrappedValue: launch)
     }
 
     var body: some Scene {
@@ -30,7 +33,8 @@ struct MacBridgeApp: App {
                 eventTap: eventTap,
                 detector: detector,
                 profileManager: profileManager,
-                ruleStore: ruleStore
+                ruleStore: ruleStore,
+                launchAtLogin: launchAtLogin
             )
         } label: {
             Image(systemName: menuIconName)

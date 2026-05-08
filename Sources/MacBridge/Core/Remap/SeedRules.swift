@@ -35,6 +35,31 @@ enum SeedRules {
         RuleBook(rules: defaultRules, version: RuleBook.currentVersion)
     }
 
+    /// The built-in "Windows Migration" scheme every fresh install starts
+    /// with. Gets re-created if the library is empty or corrupt.
+    static func defaultScheme() -> Scheme {
+        let now = Date()
+        return Scheme(
+            id: UUID(),
+            name: "Windows Migration",
+            createdAt: now,
+            modifiedAt: now,
+            book: defaultBook,
+            isBuiltIn: true
+        )
+    }
+
+    /// Used by `SchemeStore` when nothing is on disk and there's no legacy
+    /// data to migrate — produces a library with a single built-in scheme.
+    static func defaultLibrary() -> SchemeLibrary {
+        let scheme = defaultScheme()
+        return SchemeLibrary(
+            schemes: [scheme],
+            activeSchemeID: scheme.id,
+            libraryVersion: SchemeLibrary.currentLibraryVersion
+        )
+    }
+
     static var defaultRules: [RemapRule] {
         var out: [RemapRule] = []
 
