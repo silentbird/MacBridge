@@ -10,7 +10,8 @@
       "Bash(mdfind -name \"MacBridge.app\")",
       "Read(//Applications/**)",
       "Bash(codesign -dvv MacBridge.app)",
-      "Bash(./build.sh release *)"
+      "Bash(./build.sh release *)",
+      "Bash(swift test *)"
     ]
   }
 }

@@ -168,6 +168,5 @@ struct MenuBarContent: View {
     private var devSection: some View {
         Text("Dev sanity checks").font(.caption).foregroundStyle(.secondary)
         Toggle("A → B event-tap test", isOn: $eventTap.devABTestEnabled)
-        Text(eventTap.statusText).font(.caption)
     }
 }

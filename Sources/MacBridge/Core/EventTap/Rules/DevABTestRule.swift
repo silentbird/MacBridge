@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Dev-only sanity check carried from the POC: press A, get B. Kept so we
-/// can verify the tap is actually intercepting events when real rules fall
-/// silent (e.g. in terminal, where the CtrlSemanticRule opts out).
+/// Dev-only sanity check: press A, get B. Used to verify the tap is actually
+/// intercepting events when real rules fall silent (e.g. in a terminal, where
+/// CtrlSemanticRule opts out by design).
 final class DevABTestRule: KeyRemapRule {
     private let isEnabled: () -> Bool
 

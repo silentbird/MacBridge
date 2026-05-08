@@ -13,7 +13,6 @@ final class KeyboardDetector: ObservableObject {
     @Published private(set) var initialEnumerationCount: Int = 0
     @Published private(set) var callbackConnects: Int = 0
     @Published private(set) var callbackRemoves: Int = 0
-    @Published private(set) var lastSnapshot: String = ""
 
     var permissionDenied: Bool { openResult == kIOReturnNotPermitted }
 
@@ -86,7 +85,6 @@ final class KeyboardDetector: ObservableObject {
             return
         }
         tracked[ObjectIdentifier(device)] = kb
-        lastSnapshot = kb.debugLabel
         refreshDevices()
     }
 

@@ -38,7 +38,10 @@ final class EventTapController: ObservableObject {
             .sink { [weak self] _ in self?.reconcile() }
             .store(in: &cancellables)
 
-        reconcile()
+        // Deferred to the next main run-loop tick: EventTapController is
+        // created inside MacBridgeApp.init, before NSApp finishes launching;
+        // CGEvent.tapCreate can return nil that early. Bouncing through the
+        // run loop gives AppKit a chance to come up before we attach the tap.
         DispatchQueue.main.async { [weak self] in
             self?.reconcile()
         }
