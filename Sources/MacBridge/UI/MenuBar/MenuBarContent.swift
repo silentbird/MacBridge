@@ -8,6 +8,7 @@ struct MenuBarContent: View {
     @ObservedObject var profileManager: ProfileManager
     @ObservedObject var ruleStore: SchemeStore
     @ObservedObject var launchAtLogin: LaunchAtLoginService
+    @ObservedObject var onboarding: OnboardingState
 
     @Environment(\.openWindow) private var openWindow
 
@@ -15,6 +16,11 @@ struct MenuBarContent: View {
         Group {
             Text("MacBridge").font(.headline)
             Divider()
+
+            if !onboarding.permissionStatus.allGranted {
+                permissionWarningSection
+                Divider()
+            }
 
             globalSection
 
@@ -30,6 +36,7 @@ struct MenuBarContent: View {
             Divider()
             Button("Re-check permissions") {
                 AccessibilityPermission.checkAndPromptIfNeeded()
+                onboarding.refresh()
                 eventTap.retryStart()
             }
             Button("Copy diagnostic log") {
@@ -48,6 +55,20 @@ struct MenuBarContent: View {
         .onAppear {
             eventTap.refresh()
             launchAtLogin.refresh()
+            // Cheap one-shot probe — the wizard's polling timer is paused
+            // while its window is closed, so this catches grants the user
+            // made via System Settings without the wizard open.
+            onboarding.refresh()
+        }
+    }
+
+    @ViewBuilder
+    private var permissionWarningSection: some View {
+        Button {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: MacBridgeApp.onboardingWindowID)
+        } label: {
+            Text("⚠ Missing permissions — open setup…")
         }
     }
 
