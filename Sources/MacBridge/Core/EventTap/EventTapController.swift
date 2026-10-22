@@ -122,7 +122,8 @@ final class EventTapController: ObservableObject {
 
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue)
+            (1 << CGEventType.keyUp.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 

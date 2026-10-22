@@ -46,6 +46,92 @@ final class RuleEngineCustomRuleTests: XCTestCase {
         return e
     }
 
+    // MARK: Alt+Tab → Cmd+Tab must hold Cmd until Alt is released
+
+    private var altTabRule: RemapRule {
+        RemapRule(
+            id: UUID(),
+            name: "⌥⇥ → ⌘⇥",
+            enabled: true,
+            trigger: KeyTrigger(keyCode: 48, requiredModifiers: [.alt], forbiddenModifiers: [.cmd]),
+            output: KeyOutput(keyCode: nil, setModifiers: [.cmd], clearModifiers: [.alt]),
+            excludeBundleIDs: [],
+            isBuiltIn: false
+        )
+    }
+
+    private func modifierEvents() -> [CGEvent] {
+        postedEvents.filter { $0.type == .flagsChanged }
+    }
+
+    func testAltTabPressesCmdBeforeKeyAndReleasesWhenAltReleased() {
+        installRules([altTabRule])
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+
+        XCTAssertEqual(engine.apply(to: makeEvent(keyCode: 48, flags: .maskAlternate), type: .keyDown, context: ctx), .suppress)
+        XCTAssertEqual(postedEvents.count, 2)
+        XCTAssertEqual(postedEvents[0].type, .flagsChanged)
+        XCTAssertEqual(postedEvents[0].getIntegerValueField(.keyboardEventKeycode), 55)
+        XCTAssertTrue(postedEvents[0].flags.contains(.maskCommand))
+        XCTAssertEqual(postedEvents[1].type, .keyDown)
+        XCTAssertEqual(
+            postedEvents[0].getIntegerValueField(.eventSourceUserData),
+            KeyRemapSyntheticEvent.userData
+        )
+
+        // Tab released while Alt still held: Cmd must stay down.
+        XCTAssertEqual(engine.apply(to: makeEvent(keyCode: 48, flags: .maskAlternate, keyDown: false), type: .keyUp, context: ctx), .suppress)
+        XCTAssertEqual(modifierEvents().count, 1)
+
+        // Alt released (system flags still show our Cmd): Cmd goes up.
+        let altUp = makeEvent(keyCode: 58, flags: .maskCommand)
+        XCTAssertEqual(engine.apply(to: altUp, type: .flagsChanged, context: ctx), .pass)
+        XCTAssertEqual(modifierEvents().count, 2)
+        XCTAssertFalse(modifierEvents()[1].flags.contains(.maskCommand))
+    }
+
+    /// Regression (seen on a real Windows keyboard): after we post a
+    /// flagsChanged, the Tab keyUp and other events no longer carry Alt in
+    /// their flags even though Alt is still held. Only Alt's own flagsChanged
+    /// may release the Cmd we pressed, otherwise the switcher flashes and
+    /// commits before the user lets go of Alt.
+    func testHeldCmdOnlyReleasedByAltsOwnFlagsChanged() {
+        installRules([altTabRule])
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+        _ = engine.apply(to: makeEvent(keyCode: 48, flags: .maskAlternate), type: .keyDown, context: ctx)
+        postedEvents.removeAll()
+
+        _ = engine.apply(to: makeEvent(keyCode: 48, flags: .maskCommand, keyDown: false), type: .keyUp, context: ctx)
+        _ = engine.apply(to: makeEvent(keyCode: 56, flags: [.maskCommand, .maskShift]), type: .flagsChanged, context: ctx)
+        XCTAssertTrue(modifierEvents().isEmpty, "Cmd must stay down until Alt itself is released")
+
+        _ = engine.apply(to: makeEvent(keyCode: 58, flags: .maskCommand), type: .flagsChanged, context: ctx)
+        XCTAssertEqual(modifierEvents().count, 1)
+    }
+
+    func testSecondTabWhileHoldingAltStillRemapsAndDoesNotRepressCmd() {
+        installRules([altTabRule])
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+        _ = engine.apply(to: makeEvent(keyCode: 48, flags: .maskAlternate), type: .keyDown, context: ctx)
+        _ = engine.apply(to: makeEvent(keyCode: 48, flags: .maskAlternate, keyDown: false), type: .keyUp, context: ctx)
+        postedEvents.removeAll()
+
+        // Now the system flags include our synthetic Cmd next to the real Alt.
+        let second = makeEvent(keyCode: 48, flags: [.maskAlternate, .maskCommand])
+        XCTAssertEqual(engine.apply(to: second, type: .keyDown, context: ctx), .suppress)
+        XCTAssertTrue(modifierEvents().isEmpty)
+        XCTAssertEqual(postedEvents.count, 1)
+        XCTAssertTrue(postedEvents[0].flags.contains(.maskCommand))
+        XCTAssertFalse(postedEvents[0].flags.contains(.maskAlternate))
+    }
+
+    func testNonTabRuleDoesNotHoldModifier() {
+        installRules([altTabRule])
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+        _ = engine.apply(to: makeEvent(keyCode: 8, flags: .maskControl), type: .keyDown, context: ctx)
+        XCTAssertTrue(modifierEvents().isEmpty)
+    }
+
     // MARK: Custom key-to-key remap (output keyCode != trigger keyCode)
 
     func testAltQToCmdWClosesTab() {

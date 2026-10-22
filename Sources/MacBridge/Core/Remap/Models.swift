@@ -23,6 +23,31 @@ struct ModifierSet: OptionSet, Codable, Hashable {
         return out
     }
 
+    /// Device-dependent (left/right) bits that real keyboard events carry next
+    /// to the aggregate masks (IOLLEvent.h `NX_DEVICE*KEYMASK`). Clearing only
+    /// the aggregate bit leaves e.g. left-Ctrl (0x1) behind, which consumers
+    /// that read per-side state (remote-control clients, VMs, games) see as a
+    /// still-held Ctrl until the next event refreshes the flags.
+    var deviceFlagsAnySide: UInt64 {
+        var out: UInt64 = 0
+        if contains(.ctrl)  { out |= 0x0000_2001 }
+        if contains(.shift) { out |= 0x0000_0006 }
+        if contains(.alt)   { out |= 0x0000_0060 }
+        if contains(.cmd)   { out |= 0x0000_0018 }
+        return out
+    }
+
+    /// Left-side device bits, set alongside the aggregate mask so a newly
+    /// added modifier looks like a real key press.
+    var deviceFlagsLeftSide: UInt64 {
+        var out: UInt64 = 0
+        if contains(.ctrl)  { out |= 0x0000_0001 }
+        if contains(.shift) { out |= 0x0000_0002 }
+        if contains(.alt)   { out |= 0x0000_0020 }
+        if contains(.cmd)   { out |= 0x0000_0008 }
+        return out
+    }
+
     static func from(_ flags: CGEventFlags) -> ModifierSet {
         var out: ModifierSet = []
         if flags.contains(.maskControl)      { out.insert(.ctrl) }

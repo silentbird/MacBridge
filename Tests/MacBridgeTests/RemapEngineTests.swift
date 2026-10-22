@@ -68,6 +68,21 @@ final class RemapEngineTests: XCTestCase {
         )
     }
 
+    /// Real keyboard events carry device-dependent side bits (left Ctrl = 0x1)
+    /// next to `.maskControl`. If those survive the rewrite, per-side
+    /// consumers still see Ctrl held after the shortcut.
+    func testCtrlCClearsDeviceDependentCtrlBitsAndMarksLeftCmd() {
+        let realCtrl: UInt64 = CGEventFlags.maskControl.rawValue | 0x1
+        let e = makeEvent(keyCode: 8, flags: CGEventFlags(rawValue: realCtrl))
+        let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
+        XCTAssertEqual(engine.apply(to: e, type: .keyDown, context: ctx), .suppress)
+
+        let raw = postedEvents[0].flags.rawValue
+        XCTAssertEqual(raw & 0x2001, 0, "left/right Ctrl device bits must be cleared")
+        XCTAssertNotEqual(raw & 0x8, 0, "left Cmd device bit should accompany .maskCommand")
+        XCTAssertTrue(postedEvents[0].flags.contains(.maskCommand))
+    }
+
     func testKeyUpForRemappedShortcutStaysCmdEvenIfControlReleasedFirst() {
         let ctx = KeyRemapContext(frontmostBundleID: "com.apple.Safari")
         let down = makeEvent(keyCode: 8, flags: .maskControl)
